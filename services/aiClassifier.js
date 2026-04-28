@@ -98,7 +98,9 @@ export async function classifyVoiceNode(nodeId, text, roomId, userId) {
     const label = parsed.label;
     const confidence = Number(parsed.confidence) || 0;
 
-    if (label === 'action_item' && confidence > 0.7) {
+    console.log(`[AI Voice Classify] Label: ${label}, Confidence: ${confidence}, Text: "${text}"`);
+
+    if ((label === 'action_item' || label === 'task') && confidence > 0.5) {
       const r = await pool.query(
         'INSERT INTO tasks (room_id, canvas_node_id, content, author_id, intent_label) VALUES ($1,$2,$3,$4,$5) RETURNING *',
         [roomId, nodeId, text, userId, label]

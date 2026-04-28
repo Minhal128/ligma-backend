@@ -60,6 +60,7 @@ export function setupWebSocket(server) {
     ws.on('message', async (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
+        console.log(`[WS Incoming] Type: ${msg.type}`, msg);
 
         if (msg.type === 'join_room') {
           const token = msg.token;
@@ -222,31 +223,11 @@ export function setupWebSocket(server) {
           const check = await canCreateNode(currentRoomId, userCtx.user_id);
           if (!check.allowed) {
             ws.send(JSON.stringify({ type: 'error', code: 'RBAC_DENIED', message: check.reason }));
-            const { logSecurityEvent } = await import('../services/rbac.js');
-            await logSecurityEvent(currentRoomId, userCtx.user_id, null, 'voice_node_create', check.reason);
-            broadcastToLeads(currentRoomId, {
-              type: 'security_violation',
-              user_id: userCtx.user_id,
-              username: userCtx.username,
-              node_id: null,
-              attempted_action: 'voice_node_create',
-              attempted_at: new Date().toISOString(),
-            });
             return;
           }
-          const pos = JSON.stringify({ x: msg.x || 0, y: msg.y || 0 });
-          const nodeRes = await pool.query(
-            'INSERT INTO canvas_nodes (room_id, type, content, position, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-            [currentRoomId, 'sticky_note', msg.text, pos, userCtx.user_id]
-          );
-          const node = nodeRes.rows[0];
-          await insertCanvasEvent(currentRoomId, userCtx.user_id, 'node_created_via_voice', { node_id: node.id, text: msg.text });
-          broadcastToRoom(currentRoomId, {
-            type: 'event_log_entry',
-            event: { event_type: 'node_created_via_voice', payload: { node_id: node.id, text: msg.text }, created_at: new Date().toISOString(), username: userCtx.username }
-          });
-          const { classifyVoiceNode } = await import('../services/aiClassifier.js');
-          classifyVoiceNode(node.id, msg.text, currentRoomId, userCtx.user_id);
+
+          const { processVoiceAction } = await import('../services/voiceAgent.js');
+          await processVoiceAction(msg.text, currentRoomId, userCtx.user_id, msg.x, msg.y);
           return;
         }
       } catch (e) {
