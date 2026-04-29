@@ -44,20 +44,21 @@ export async function getYDoc(roomId) {
       });
     });
 
+    // Save to DB periodically when it changes
     let saveTimeout = null;
     doc.on('update', () => {
       if (saveTimeout) return;
       saveTimeout = setTimeout(async () => {
+        saveTimeout = null; // Clear first so next update can schedule
         try {
           const fullUpdate = Y.encodeStateAsUpdate(doc);
           const base64Update = Buffer.from(fullUpdate).toString('base64');
           await pool.query('UPDATE rooms SET yjs_state = $1 WHERE id = $2', [base64Update, roomId]);
+          console.log(`[Yjs] Saved state for room ${roomId}`);
         } catch (err) {
           console.error('Failed to save yjs state to DB', err);
-        } finally {
-          saveTimeout = null;
         }
-      }, 5000);
+      }, 1000); // Save at most once every 1 second
     });
 
     yDocs.set(roomId, doc);
