@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS room_invites (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('lead','contributor','viewer')),
+  invited_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  token TEXT UNIQUE NOT NULL,
+  accepted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  accepted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (room_id, email)
+);
+
 CREATE TABLE IF NOT EXISTS conflict_events (
   id BIGSERIAL PRIMARY KEY,
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
@@ -74,3 +87,22 @@ CREATE TABLE IF NOT EXISTS security_events (
 );
 
 ALTER TABLE rooms ADD COLUMN IF NOT EXISTS yjs_state TEXT;
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT false;
+
+-- Email field for password reset
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT UNIQUE;
+
+-- Password reset / OTP fields
+ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ;
+
+-- Jira-like task tracking extensions
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'todo'
+  CHECK (status IN ('todo','in_progress','done'));
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+
+UPDATE tasks SET title = COALESCE(title, content) WHERE title IS NULL;

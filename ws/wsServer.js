@@ -159,6 +159,24 @@ export function setupWebSocket(server) {
             });
             return;
           }
+          
+          // Check if room is locked - only leads can edit when locked
+          const roomCheck = await pool.query('SELECT is_locked FROM rooms WHERE id=$1', [currentRoomId]);
+          const isLocked = roomCheck.rows[0]?.is_locked || false;
+          if (isLocked && role !== 'lead') {
+            ws.send(JSON.stringify({ type: 'error', code: 'ROOM_LOCKED', message: 'Room is locked. Only leads can edit. Contributors can comment.' }));
+            await logSecurityEvent(currentRoomId, userCtx.user_id, null, 'yjs_update', 'Room locked - contributor denied');
+            broadcastToLeads(currentRoomId, {
+              type: 'security_violation',
+              user_id: userCtx.user_id,
+              username: userCtx.username,
+              node_id: null,
+              attempted_action: 'yjs_update_locked_room',
+              attempted_at: new Date().toISOString(),
+            });
+            return;
+          }
+          
           await handleYjsUpdate(currentRoomId, msg.update, userCtx.user_id);
           broadcastToRoom(currentRoomId, { type: 'yjs_update', update: msg.update }, userCtx.user_id);
           return;
