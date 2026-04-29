@@ -97,21 +97,26 @@ export async function sendRoomInvite(email, invitedBy, roomName, role, inviteUrl
     return { success: true, devMode: true };
   }
 
-  const data = await transporter.sendMail({
-    from: `LIGMA <${FROM_EMAIL}>`,
-    to: email,
-    subject: `Workspace invite: ${roomName}`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 580px; margin: 0 auto;">
-        <h2>You've been invited to LIGMA</h2>
-        <p><strong>${invitedBy}</strong> invited you to join <strong>${roomName}</strong> as <strong>${role}</strong>.</p>
-        <p style="margin-top: 24px;">
-          <a href="${inviteUrl}" style="background:#111;color:#fff;padding:10px 16px;text-decoration:none;border-radius:4px;">
-            Accept invite
-          </a>
-        </p>
-      </div>
-    `,
-  });
-  return { success: true, data };
+  try {
+    const data = await transporter.sendMail({
+      from: `LIGMA <${FROM_EMAIL}>`,
+      to: String(email).toLowerCase().trim(),
+      subject: `Workspace invite: ${roomName}`,
+      html: `
+        <div style="font-family: monospace; max-width: 500px; margin: 0 auto; border: 4px solid #000; padding: 24px;">
+          <h1 style="font-size: 24px; font-weight: 900; text-transform: uppercase; letter-spacing: -1px; margin: 0 0 16px 0;">LIGMA</h1>
+          <h2 style="font-size: 18px; font-weight: 900; margin: 0 0 16px 0;">Invitation</h2>
+          <p style="font-size: 14px; font-weight: 700; margin: 0 0 8px 0;"><strong>@${invitedBy}</strong> has invited you to join <strong>${roomName}</strong> as a <strong>${role}</strong>.</p>
+          <div style="margin: 24px 0;">
+            <a href="${inviteUrl}" style="display: inline-block; background: #ff6b6b; border: 4px solid #000; padding: 12px 24px; text-decoration: none; color: #000; font-weight: 900; font-size: 14px; text-transform: uppercase;">ACCEPT INVITE</a>
+          </div>
+          <p style="font-size: 12px; font-weight: 700; color: #666; margin: 0;">If you don't have an account, you can create one after clicking the link.</p>
+        </div>
+      `,
+    });
+    return { success: true, data };
+  } catch (err) {
+    console.error('Failed to send room invite email:', err);
+    throw err;
+  }
 }
