@@ -10,6 +10,7 @@ const cursorColors = [
   '#e94560', '#0f3460', '#533483', '#16a085', '#f39c12',
   '#8e44ad', '#2ecc71', '#e74c3c', '#3498db', '#1abc9c'
 ];
+const cursorLogThrottle = new Map(); // roomId:userId -> { ts, x, y }
 
 function assignColor(roomId) {
   const room = rooms.get(roomId);
@@ -193,6 +194,30 @@ export function setupWebSocket(server) {
             y: msg.y,
             color: rooms.get(currentRoomId)?.get(userCtx.user_id)?.color,
           }, userCtx.user_id);
+
+          // Also stream cursor activity into event log with throttle.
+          const logKey = `${currentRoomId}:${userCtx.user_id}`;
+          const prev = cursorLogThrottle.get(logKey) || { ts: 0, x: msg.x, y: msg.y };
+          const now = Date.now();
+          const movedFarEnough = Math.abs((msg.x ?? 0) - (prev.x ?? 0)) + Math.abs((msg.y ?? 0) - (prev.y ?? 0)) >= 80;
+          if (movedFarEnough && now - prev.ts >= 900) {
+            cursorLogThrottle.set(logKey, { ts: now, x: msg.x, y: msg.y });
+            const inserted = await insertCanvasEvent(currentRoomId, userCtx.user_id, 'cursor_moved', {
+              x: Math.round(msg.x ?? 0),
+              y: Math.round(msg.y ?? 0),
+            });
+            broadcastToRoom(currentRoomId, {
+              type: 'event_log_entry',
+              event: {
+                id: inserted.id,
+                event_type: 'cursor_moved',
+                payload: { x: Math.round(msg.x ?? 0), y: Math.round(msg.y ?? 0) },
+                created_at: inserted.created_at,
+                user_id: userCtx.user_id,
+                username: userCtx.username,
+              }
+            });
+          }
           return;
         }
 
