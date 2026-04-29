@@ -27,6 +27,12 @@ router.post('/', async (req, res) => {
       'INSERT INTO room_members (room_id, user_id, role) VALUES ($1,$2,$3)',
       [room.id, req.user.user_id, 'lead']
     );
+    
+    // Broadcast to lobby clients
+    const { broadcastToLobby } = await import('../ws/wsServer.js');
+    room.my_role = 'lead';
+    broadcastToLobby({ type: 'room_created', room });
+
     res.json(room);
   } catch (e) {
     console.error('Create room error', e);

@@ -20,6 +20,15 @@ function assignColor(roomId) {
   return cursorColors[Math.floor(Math.random() * cursorColors.length)];
 }
 
+export const lobbyClients = new Set();
+
+export function broadcastToLobby(message) {
+  const payload = JSON.stringify(message);
+  for (const ws of lobbyClients) {
+    if (ws.readyState === 1) ws.send(payload);
+  }
+}
+
 export function broadcastToRoom(roomId, message, excludeUserId) {
   const room = rooms.get(roomId);
   if (!room) return;
@@ -61,6 +70,12 @@ export function setupWebSocket(server) {
       try {
         const msg = JSON.parse(raw.toString());
         console.log(`[WS Incoming] Type: ${msg.type}`, msg);
+
+        if (msg.type === 'join_lobby') {
+          lobbyClients.add(ws);
+          ws.on('close', () => lobbyClients.delete(ws));
+          return;
+        }
 
         if (msg.type === 'join_room') {
           const token = msg.token;
