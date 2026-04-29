@@ -182,7 +182,7 @@ router.post('/:id/invite', async (req, res) => {
     if (user.rows.length && user.rows[0].email) {
       const roomRes = await pool.query('SELECT name FROM rooms WHERE id = $1', [req.params.id]);
       const roomName = roomRes.rows[0]?.name || 'Untitled Room';
-      const inviteUrl = `${FRONTEND_URL}/#/login`;
+      const inviteUrl = `${FRONTEND_URL}/login`;
       
       try {
         await sendRoomInvite(user.rows[0].email, req.user.username, roomName, role, inviteUrl);
@@ -220,7 +220,7 @@ router.post('/:id/invite-email', async (req, res) => {
       [room.id, email.toLowerCase(), role, req.user.user_id, token]
     );
 
-    const inviteUrl = `${FRONTEND_URL}/#/login?invite=${token}`;
+    const inviteUrl = `${FRONTEND_URL}/login?invite=${token}`;
     await sendRoomInvite(email, req.user.username, room.name, role, inviteUrl);
 
     const maybeUser = await pool.query('SELECT id FROM users WHERE lower(email)=lower($1)', [email]);
