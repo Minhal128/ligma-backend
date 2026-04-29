@@ -23,7 +23,7 @@ app.use(cors({
   credentials: true
 }));
 
-console.log('Allowed CORS origins:', allowedOrigins);
+
 
 app.use(express.json());
 
