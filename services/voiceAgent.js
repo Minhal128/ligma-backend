@@ -1,7 +1,4 @@
-import Groq from 'groq-sdk';
 import { broadcastToRoom } from '../ws/wsServer.js';
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function processVoiceAction(transcript, roomId, userId, x, y) {
   // Normalize transcript (handle common voice mishearings)

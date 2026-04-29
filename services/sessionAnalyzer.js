@@ -1,7 +1,4 @@
 import pool from '../db/pool.js';
-import Groq from 'groq-sdk';
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function analyzeSession(roomId) {
   const eventsRes = await pool.query(
@@ -90,31 +87,7 @@ export async function analyzeSession(roomId) {
     activityTimeline,
   };
 
-  const chat = await groq.chat.completions.create({
-    model: 'llama3-8b-8192',
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a meeting analyst. Respond ONLY with valid JSON. No explanation.'
-      },
-      {
-        role: 'user',
-        content: `Given this session data: ${JSON.stringify(summary)}\nGenerate a professional session brief with these fields:\n{\n  "executiveSummary": string (2-3 sentences),\n  "keyDecisions": string[],\n  "assignedTasks": { task: string, suggestedOwner: string }[],\n  "openQuestions": string[],\n  "collaborationScore": number (0-100, based on edit distribution),\n  "riskFlags": string[] (any open questions or unassigned tasks)\n}`
-      }
-    ],
-    temperature: 0.2,
-    max_tokens: 1024,
-  });
-
-  const raw = chat.choices[0]?.message?.content?.trim() || '{}';
-  let aiBrief;
-  try {
-    aiBrief = JSON.parse(raw);
-  } catch {
-    const m = raw.match(/\{[\s\S]*?\}/);
-    if (m) aiBrief = JSON.parse(m[0]);
-    else aiBrief = {};
-  }
+  let aiBrief = {};
 
   // Compute collaboration score: higher when edits are evenly distributed
   let collaborationScore = 50;

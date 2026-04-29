@@ -1,7 +1,4 @@
-import Groq from 'groq-sdk';
 import pool from '../db/pool.js';
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const debounceMap = new Map(); // nodeId -> { timeout, lastText }
 
@@ -14,30 +11,7 @@ export async function classifyNodeText(nodeId, text, roomId, userId) {
     timeout: setTimeout(async () => {
       debounceMap.delete(key);
       try {
-        const chat = await groq.chat.completions.create({
-          model: 'llama3-8b-8192',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a classifier. Respond ONLY with valid JSON. No explanation.'
-            },
-            {
-              role: 'user',
-              content: `Classify this text into exactly one category: action_item, decision, open_question, or reference.\nText: '${text}'\nRespond with: {"label": "<category>", "confidence": <0-1>}`
-            }
-          ],
-          temperature: 0,
-          max_tokens: 64,
-        });
-        const raw = chat.choices[0]?.message?.content?.trim() || '{}';
-        let parsed;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          const m = raw.match(/\{[\s\S]*?\}/);
-          if (m) parsed = JSON.parse(m[0]);
-          else parsed = {};
-        }
+        const parsed = { label: 'reference', confidence: 0 };
         const label = parsed.label;
         const confidence = Number(parsed.confidence) || 0;
 
@@ -71,30 +45,7 @@ export async function classifyNodeText(nodeId, text, roomId, userId) {
 export async function classifyVoiceNode(nodeId, text, roomId, userId) {
   // No debounce for voice — already a complete thought
   try {
-    const chat = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a classifier. Respond ONLY with valid JSON. No explanation.'
-        },
-        {
-          role: 'user',
-          content: `Classify this text into exactly one category: action_item, decision, open_question, or reference.\nText: '${text}'\nRespond with: {"label": "<category>", "confidence": <0-1>}`
-        }
-      ],
-      temperature: 0,
-      max_tokens: 64,
-    });
-    const raw = chat.choices[0]?.message?.content?.trim() || '{}';
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      const m = raw.match(/\{[\s\S]*?\}/);
-      if (m) parsed = JSON.parse(m[0]);
-      else parsed = {};
-    }
+    const parsed = { label: 'reference', confidence: 0 };
     const label = parsed.label;
     const confidence = Number(parsed.confidence) || 0;
 
