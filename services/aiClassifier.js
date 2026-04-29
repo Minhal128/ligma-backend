@@ -76,6 +76,13 @@ export async function classifyNodeText(nodeId, text, roomId, userId) {
         const parsed = JSON.parse(response.choices[0].message.content);
         const label = parsed.label;
         const confidence = Number(parsed.confidence) || 0;
+        const aiTag = {
+          type: label,
+          assignee: parsed.assignee || null,
+          due: parsed.due || null,
+          confidence,
+          updated_at: new Date().toISOString(),
+        };
 
         console.log(`[AI Classify] "${text}" -> ${label} (${confidence})`);
 
@@ -106,15 +113,17 @@ export async function classifyNodeText(nodeId, text, roomId, userId) {
             });
           }
           // Action items could be red
-          await updateNodeProps(roomId, nodeId, { color: 'red' });
+          await updateNodeProps(roomId, nodeId, { color: 'red', aiTag });
         } 
         else if (label === 'decision') {
           // Decisions are blue
-          await updateNodeProps(roomId, nodeId, { color: 'blue' });
+          await updateNodeProps(roomId, nodeId, { color: 'blue', aiTag });
         } 
         else if (label === 'open_question') {
           // Questions are orange/yellow
-          await updateNodeProps(roomId, nodeId, { color: 'orange' });
+          await updateNodeProps(roomId, nodeId, { color: 'orange', aiTag });
+        } else if (label === 'reference') {
+          await updateNodeProps(roomId, nodeId, { aiTag });
         }
       } catch (e) {
         console.error('AI classify error', e);
