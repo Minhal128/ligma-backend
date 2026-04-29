@@ -3,25 +3,54 @@ import { encodeStateAsUpdate, applyUpdate } from 'yjs';
 import pool from '../db/pool.js';
 
 const yDocs = new Map(); // roomId -> Y.Doc
+const yDocPromises = new Map(); // roomId -> Promise<Y.Doc>
 const lastUpdateMap = new Map(); // roomId -> Map<nodeId, Map<userId, timestamp>>
 
-export function getYDoc(roomId) {
-  if (!yDocs.has(roomId)) {
+export async function getYDoc(roomId) {
+  if (yDocs.has(roomId)) return yDocs.get(roomId);
+  if (yDocPromises.has(roomId)) return yDocPromises.get(roomId);
+
+  const promise = (async () => {
     const doc = new Y.Doc();
-    yDocs.set(roomId, doc);
     lastUpdateMap.set(roomId, new Map());
-  }
-  return yDocs.get(roomId);
+    try {
+      const res = await pool.query('SELECT yjs_state FROM rooms WHERE id = $1', [roomId]);
+      if (res.rows.length && res.rows[0].yjs_state) {
+        const update = new Uint8Array(Buffer.from(res.rows[0].yjs_state, 'base64'));
+        applyUpdate(doc, update);
+      }
+    } catch (e) {
+      console.error('Failed to load yjs state from DB', e);
+    }
+    
+    // Save to DB periodically when it changes
+    doc.on('update', async (updateMsg) => {
+      try {
+        const fullUpdate = encodeStateAsUpdate(doc);
+        const base64Update = Buffer.from(fullUpdate).toString('base64');
+        await pool.query('UPDATE rooms SET yjs_state = $1 WHERE id = $2', [base64Update, roomId]);
+      } catch (err) {
+        console.error('Failed to save yjs state to DB', err);
+      }
+    });
+
+    yDocs.set(roomId, doc);
+    yDocPromises.delete(roomId);
+    return doc;
+  })();
+  
+  yDocPromises.set(roomId, promise);
+  return promise;
 }
 
-export function getYDocState(roomId) {
-  const doc = getYDoc(roomId);
+export async function getYDocState(roomId) {
+  const doc = await getYDoc(roomId);
   const update = encodeStateAsUpdate(doc);
   return Buffer.from(update).toString('base64');
 }
 
 export async function handleYjsUpdate(roomId, base64Update, userId) {
-  const doc = getYDoc(roomId);
+  const doc = await getYDoc(roomId);
   const update = new Uint8Array(Buffer.from(base64Update, 'base64'));
 
   // Detect concurrent edit conflicts before applying

@@ -95,7 +95,7 @@ export function setupWebSocket(server) {
           userCtx = payload;
 
           // Send Yjs initial sync
-          const state = getYDocState(roomId);
+          const state = await getYDocState(roomId);
           ws.send(JSON.stringify({ type: 'yjs_update', update: state }));
 
           await insertCanvasEvent(roomId, payload.user_id, 'user_joined', {

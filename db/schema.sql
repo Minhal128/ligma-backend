@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
+  yjs_state TEXT,
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -71,3 +72,5 @@ CREATE TABLE IF NOT EXISTS security_events (
   denial_reason TEXT NOT NULL,
   attempted_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS yjs_state TEXT;
