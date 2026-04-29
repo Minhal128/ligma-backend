@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
+
+dotenv.config();
+
 import { setupWebSocket } from './ws/wsServer.js';
 import authRoutes from './routes/auth.js';
 import roomRoutes from './routes/rooms.js';
@@ -10,13 +13,28 @@ import eventRoutes from './routes/events.js';
 import sessionReportRoutes from './routes/session-report.js';
 import pool from './db/pool.js';
 
-dotenv.config();
 
 const app = express();
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
+
+console.log('Allowed CORS origins:', allowedOrigins);
+
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);

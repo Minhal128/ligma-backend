@@ -176,6 +176,21 @@ router.post('/:id/invite', async (req, res) => {
       'INSERT INTO room_members (room_id, user_id, role) VALUES ($1,$2,$3) ON CONFLICT (room_id, user_id) DO UPDATE SET role = $3',
       [req.params.id, userId, role]
     );
+
+    // Send notification email if user has an email
+    const user = await pool.query('SELECT email, username FROM users WHERE id = $1', [userId]);
+    if (user.rows.length && user.rows[0].email) {
+      const roomRes = await pool.query('SELECT name FROM rooms WHERE id = $1', [req.params.id]);
+      const roomName = roomRes.rows[0]?.name || 'Untitled Room';
+      const inviteUrl = `${FRONTEND_URL}/#/login`;
+      
+      try {
+        await sendRoomInvite(user.rows[0].email, req.user.username, roomName, role, inviteUrl);
+      } catch (err) {
+        console.error('Failed to send notification email', err);
+        // Don't fail the whole request if only email fails
+      }
+    }
     
     res.json({ ok: true, invited: username, role });
   } catch (e) {
