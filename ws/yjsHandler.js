@@ -1,11 +1,21 @@
 import * as Y from 'yjs';
 import { encodeStateAsUpdate, applyUpdate } from 'yjs';
 import pool from '../db/pool.js';
+import { insertCanvasEvent } from '../services/eventStore.js';
 
 const yDocs = new Map(); // roomId -> Y.Doc
 const yDocPromises = new Map(); // roomId -> Promise<Y.Doc>
 const lastUpdateMap = new Map(); // roomId -> Map<nodeId, Map<userId, timestamp>>
 const lastEditorMap = new Map(); // roomId:nodeId -> userId
+const moveEventThrottle = new Map(); // roomId:nodeId:userId -> timestamp
+
+function isRenderableNodeRecord(record) {
+  if (!record || !record.id || !record.type) return false;
+  if (record.id.startsWith('instance') || record.id.startsWith('camera') || record.id.startsWith('pointer') || record.id.startsWith('page')) {
+    return false;
+  }
+  return true;
+}
 
 export async function getYDoc(roomId) {
   if (yDocs.has(roomId)) return yDocs.get(roomId);
@@ -28,20 +38,79 @@ export async function getYDoc(roomId) {
     const yMap = doc.getMap('store');
     yMap.observe(async (event) => {
       const origin = event.transaction.origin;
-      if (!origin) return; // Skip initial load or system updates
+      if (!origin || origin === 'remote' || origin === 'local-sync') return; // Skip initial/system sync
 
-      event.changes.keys.forEach(async (change, id) => {
+      let username = null;
+      try {
+        const u = await pool.query('SELECT username FROM users WHERE id=$1', [origin]);
+        username = u.rows[0]?.username || null;
+      } catch {}
+
+      const emitEvent = async (eventType, payload) => {
+        try {
+          const inserted = await insertCanvasEvent(roomId, origin, eventType, payload);
+          const { broadcastToRoom } = await import('./wsServer.js');
+          broadcastToRoom(roomId, {
+            type: 'event_log_entry',
+            event: {
+              id: inserted.id,
+              event_type: eventType,
+              payload,
+              created_at: inserted.created_at,
+              user_id: origin,
+              username,
+            }
+          });
+        } catch (e) {
+          console.error('Failed to emit realtime canvas event', e);
+        }
+      };
+
+      const jobs = [];
+      event.changes.keys.forEach((change, id) => {
         if (change.action === 'add' || change.action === 'update') {
           const record = yMap.get(id);
-          if (record && record.props && record.props.text) {
-            // Store last editor for this node
-            lastEditorMap.set(`${roomId}:${id}`, origin);
-            
-            const { classifyNodeText } = await import('../services/aiClassifier.js');
-            classifyNodeText(id, record.props.text, roomId, origin);
+          const previous = change.oldValue;
+          if (isRenderableNodeRecord(record)) {
+            const nextText = record?.props?.text || '';
+            const prevText = previous?.props?.text || '';
+            const textChanged = nextText !== prevText;
+            const moved = previous && (record.x !== previous.x || record.y !== previous.y);
+
+            if (change.action === 'add') {
+              jobs.push(emitEvent('node_created', { node_id: id, text: nextText, shape: record.type }));
+            } else {
+              if (textChanged) {
+                jobs.push(emitEvent('node_text_changed', { node_id: id, text: nextText }));
+              }
+              if (moved) {
+                const moveKey = `${roomId}:${id}:${origin}`;
+                const now = Date.now();
+                const last = moveEventThrottle.get(moveKey) || 0;
+                if (now - last > 800) {
+                  moveEventThrottle.set(moveKey, now);
+                  jobs.push(emitEvent('node_moved', { node_id: id, x: record.x, y: record.y }));
+                }
+              }
+            }
+
+            if (nextText) {
+              // Store last editor for this node
+              lastEditorMap.set(`${roomId}:${id}`, origin);
+              jobs.push((async () => {
+                const { classifyNodeText } = await import('../services/aiClassifier.js');
+                await classifyNodeText(id, nextText, roomId, origin);
+              })());
+            }
+          }
+        } else if (change.action === 'delete') {
+          const previous = change.oldValue;
+          if (isRenderableNodeRecord(previous)) {
+            jobs.push(emitEvent('node_deleted', { node_id: id, text: previous?.props?.text || '' }));
           }
         }
       });
+      await Promise.allSettled(jobs);
     });
 
     // Save to DB periodically when it changes

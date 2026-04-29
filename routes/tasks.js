@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db/pool.js';
 import { broadcastToRoom } from '../ws/wsServer.js';
+import { insertCanvasEvent } from '../services/eventStore.js';
 
 const router = Router();
 
@@ -70,6 +71,28 @@ router.post('/:roomId', async (req, res) => {
     );
     const task = r.rows[0];
     broadcastToRoom(req.params.roomId, { type: 'task_created', task });
+    const inserted = await insertCanvasEvent(req.params.roomId, req.user.user_id, 'task_created', {
+      task_id: task.id,
+      title: task.title || task.content || '',
+      assigned_to: task.assigned_to || null,
+      status: task.status,
+    });
+    broadcastToRoom(req.params.roomId, {
+      type: 'event_log_entry',
+      event: {
+        id: inserted.id,
+        event_type: 'task_created',
+        payload: {
+          task_id: task.id,
+          title: task.title || task.content || '',
+          assigned_to: task.assigned_to || null,
+          status: task.status,
+        },
+        created_at: inserted.created_at,
+        user_id: req.user.user_id,
+        username: req.user.username,
+      }
+    });
     res.json(task);
   } catch (e) {
     console.error('Create task error', e);
@@ -110,6 +133,28 @@ router.patch('/:roomId/:taskId', async (req, res) => {
       [nextTitle, nextStatus, nextAssignee, req.params.taskId]
     );
     broadcastToRoom(req.params.roomId, { type: 'task_updated', task: updated.rows[0] });
+    const inserted = await insertCanvasEvent(req.params.roomId, req.user.user_id, 'task_updated', {
+      task_id: updated.rows[0].id,
+      title: updated.rows[0].title || updated.rows[0].content || '',
+      assigned_to: updated.rows[0].assigned_to || null,
+      status: updated.rows[0].status,
+    });
+    broadcastToRoom(req.params.roomId, {
+      type: 'event_log_entry',
+      event: {
+        id: inserted.id,
+        event_type: 'task_updated',
+        payload: {
+          task_id: updated.rows[0].id,
+          title: updated.rows[0].title || updated.rows[0].content || '',
+          assigned_to: updated.rows[0].assigned_to || null,
+          status: updated.rows[0].status,
+        },
+        created_at: inserted.created_at,
+        user_id: req.user.user_id,
+        username: req.user.username,
+      }
+    });
     res.json(updated.rows[0]);
   } catch (e) {
     console.error('Update task error', e);
