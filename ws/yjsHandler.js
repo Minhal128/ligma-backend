@@ -9,13 +9,11 @@ const lastUpdateMap = new Map(); // roomId -> Map<nodeId, Map<userId, timestamp>
 const lastEditorMap = new Map(); // roomId:nodeId -> userId
 const moveEventThrottle = new Map(); // roomId:nodeId:userId -> timestamp
 
-function isRenderableNodeRecord(record) {
-  if (!record || !record.id || !record.type) return false;
-  if (record.id.startsWith('instance') || record.id.startsWith('camera') || record.id.startsWith('pointer') || record.id.startsWith('page')) {
-    return false;
-  }
-  return true;
+// Helper to check if a record is a shape that should be logged/tracked
+function isShapeRecord(record) {
+  return record && record.typeName === 'shape';
 }
+
 
 export async function getYDoc(roomId) {
   if (yDocs.has(roomId)) return yDocs.get(roomId);
@@ -34,17 +32,21 @@ export async function getYDoc(roomId) {
       console.error('Failed to load yjs state from DB', e);
     }
 
-    // Monitor changes for AI classification
+    // Monitor changes for AI classification and event logging
     const yMap = doc.getMap('store');
     yMap.observe(async (event) => {
       const origin = event.transaction.origin;
-      if (!origin || origin === 'remote' || origin === 'local-sync') return; // Skip initial/system sync
+      // We skip 'local-sync' and 'remote' only if we want to avoid loops, 
+      // but in the backend, 'origin' should be the userId.
+      if (!origin || origin === 'local-sync' || origin === 'remote') return;
 
       let username = null;
       try {
         const u = await pool.query('SELECT username FROM users WHERE id=$1', [origin]);
         username = u.rows[0]?.username || null;
-      } catch {}
+      } catch (e) {
+        console.error('Failed to fetch username for origin', origin, e);
+      }
 
       const emitEvent = async (eventType, payload) => {
         try {
@@ -71,7 +73,9 @@ export async function getYDoc(roomId) {
         if (change.action === 'add' || change.action === 'update') {
           const record = yMap.get(id);
           const previous = change.oldValue;
-          if (isRenderableNodeRecord(record)) {
+          
+          // Tldraw records have typeName, and shapes have type
+          if (record && record.typeName === 'shape') {
             const nextText = record?.props?.text || '';
             const prevText = previous?.props?.text || '';
             const textChanged = nextText !== prevText;
@@ -87,14 +91,14 @@ export async function getYDoc(roomId) {
                 const moveKey = `${roomId}:${id}:${origin}`;
                 const now = Date.now();
                 const last = moveEventThrottle.get(moveKey) || 0;
-                if (now - last > 800) {
+                if (now - last > 1000) {
                   moveEventThrottle.set(moveKey, now);
-                  jobs.push(emitEvent('node_moved', { node_id: id, x: record.x, y: record.y }));
+                  jobs.push(emitEvent('node_moved', { node_id: id, x: Math.round(record.x), y: Math.round(record.y) }));
                 }
               }
             }
 
-            if (nextText) {
+            if (nextText && textChanged) {
               // Store last editor for this node
               lastEditorMap.set(`${roomId}:${id}`, origin);
               jobs.push((async () => {
@@ -105,8 +109,8 @@ export async function getYDoc(roomId) {
           }
         } else if (change.action === 'delete') {
           const previous = change.oldValue;
-          if (isRenderableNodeRecord(previous)) {
-            jobs.push(emitEvent('node_deleted', { node_id: id, text: previous?.props?.text || '' }));
+          if (previous && previous.typeName === 'shape') {
+            jobs.push(emitEvent('node_deleted', { node_id: id, text: previous?.props?.text || '', shape: previous.type }));
           }
         }
       });

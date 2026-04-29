@@ -1,7 +1,66 @@
 import { broadcastToRoom } from '../ws/wsServer.js';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function processVoiceAction(transcript, roomId, userId, x, y) {
-  // Normalize transcript (handle common voice mishearings)
+  // 1. Check if it's a question or a general query
+  const isQuestion = transcript.toLowerCase().includes('?') || 
+                     /^(who|what|where|when|why|how|is|are|can|could|should|will|would|do|does|did)\s+/i.test(transcript.trim());
+
+  if (isQuestion) {
+    console.log(`[VoiceAgent] Question detected: "${transcript}"`);
+    try {
+      // Get current canvas state for context
+      const { getYDoc } = await import('../ws/yjsHandler.js');
+      const doc = await getYDoc(roomId);
+      const yMap = doc.getMap('store');
+      
+      const shapes = [];
+      yMap.forEach((record) => {
+        if (record && record.typeName === 'shape') {
+          shapes.push({
+            type: record.type,
+            text: record.props?.text || '',
+            color: record.props?.color || 'default',
+            position: { x: record.x, y: record.y }
+          });
+        }
+      });
+
+      const context = shapes.map(s => `[${s.type} ${s.color}] "${s.text}" at (${Math.round(s.position.x)}, ${Math.round(s.position.y)})`).join('\n');
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are an AI assistant helping with a collaborative architecture diagram. Answer the user's question concisely based on the current diagram content. If the answer is not in the diagram, provide a helpful general response." },
+          { role: "user", content: `Diagram Content:\n${context}\n\nUser Question: ${transcript}` }
+        ]
+      });
+
+      const answer = response.choices[0].message.content;
+      console.log(`[VoiceAgent] AI Answer: "${answer}"`);
+
+      // Create a new sticky note with the answer near the user's cursor
+      const actions = [{
+        type: 'create',
+        shape: 'note',
+        content: `AI: ${answer}`,
+        color: 'purple',
+        x: x || 500,
+        y: y || 500
+      }];
+      
+      broadcastToRoom(roomId, { type: 'canvas_agent_actions', actions, user_id: userId });
+      return;
+    } catch (err) {
+      console.error('[VoiceAgent] AI Question Error:', err);
+      // Fallback to local processing if OpenAI fails
+    }
+  }
+
   // Normalize transcript (handle common voice mishearings)
   let text = transcript.toLowerCase()
     .replace(/^(?:now|please|just|okay|ok)\s+/g, '') // Strip filler words
@@ -87,3 +146,4 @@ export async function processVoiceAction(transcript, roomId, userId, x, y) {
     broadcastToRoom(roomId, { type: 'canvas_agent_actions', actions, user_id: userId });
   }
 }
+
