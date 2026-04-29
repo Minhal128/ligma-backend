@@ -69,7 +69,9 @@ export function setupWebSocket(server) {
     ws.on('message', async (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
-        console.log(`[WS Incoming] Type: ${msg.type}`, msg);
+        if (process.env.DEBUG_WS === 'true' || (msg.type !== 'cursor_move' && msg.type !== 'yjs_update')) {
+          console.log(`[WS Incoming] Type: ${msg.type}`, msg);
+        }
 
         if (msg.type === 'join_lobby') {
           lobbyClients.add(ws);
