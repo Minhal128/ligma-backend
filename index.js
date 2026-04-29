@@ -74,6 +74,6 @@ const server = createServer(app);
 setupWebSocket(server);
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`LIGMA server listening on ${PORT}`);
 });

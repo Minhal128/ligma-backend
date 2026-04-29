@@ -6,20 +6,6 @@ import { handleYjsUpdate, getYDocState } from './yjsHandler.js';
 import { insertCanvasEvent } from '../services/eventStore.js';
 
 const rooms = new Map(); // roomId -> Map<userId, { ws, username, color, role, last_event_id }>
-const cursorColors = [
-  '#e94560', '#0f3460', '#533483', '#16a085', '#f39c12',
-  '#8e44ad', '#2ecc71', '#e74c3c', '#3498db', '#1abc9c'
-];
-const cursorLogThrottle = new Map(); // roomId:userId -> { ts, x, y }
-
-function assignColor(roomId) {
-  const room = rooms.get(roomId);
-  const used = room ? Array.from(room.values()).map(u => u.color) : [];
-  for (const c of cursorColors) {
-    if (!used.includes(c)) return c;
-  }
-  return cursorColors[Math.floor(Math.random() * cursorColors.length)];
-}
 
 export const lobbyClients = new Set();
 
@@ -99,11 +85,9 @@ export function setupWebSocket(server) {
             return;
           }
           currentRoomId = roomId;
-          const color = assignColor(roomId);
           const userInfo = {
             ws,
             username: payload.username,
-            color,
             role: member.rows[0].role,
             last_event_id: msg.last_event_id || 0,
             user_id: payload.user_id,
@@ -124,20 +108,6 @@ export function setupWebSocket(server) {
             type: 'event_log_entry',
             event: { event_type: 'user_joined', payload: { username: payload.username }, created_at: new Date().toISOString() }
           }, payload.user_id);
-
-          // Broadcast cursors of existing users to this client
-          for (const [uid, u] of rooms.get(roomId).entries()) {
-            if (uid !== payload.user_id) {
-              ws.send(JSON.stringify({
-                type: 'cursor_update',
-                user_id: uid,
-                username: u.username,
-                x: 0,
-                y: 0,
-                color: u.color,
-              }));
-            }
-          }
           return;
         }
 
@@ -182,42 +152,6 @@ export function setupWebSocket(server) {
           
           await handleYjsUpdate(currentRoomId, msg.update, userCtx.user_id);
           broadcastToRoom(currentRoomId, { type: 'yjs_update', update: msg.update }, userCtx.user_id);
-          return;
-        }
-
-        if (msg.type === 'cursor_move') {
-          broadcastToRoom(currentRoomId, {
-            type: 'cursor_update',
-            user_id: userCtx.user_id,
-            username: userCtx.username,
-            x: msg.x,
-            y: msg.y,
-            color: rooms.get(currentRoomId)?.get(userCtx.user_id)?.color,
-          }, userCtx.user_id);
-
-          // Also stream cursor activity into event log with throttle.
-          const logKey = `${currentRoomId}:${userCtx.user_id}`;
-          const prev = cursorLogThrottle.get(logKey) || { ts: 0, x: msg.x, y: msg.y };
-          const now = Date.now();
-          const movedFarEnough = Math.abs((msg.x ?? 0) - (prev.x ?? 0)) + Math.abs((msg.y ?? 0) - (prev.y ?? 0)) >= 80;
-          if (movedFarEnough && now - prev.ts >= 900) {
-            cursorLogThrottle.set(logKey, { ts: now, x: msg.x, y: msg.y });
-            const inserted = await insertCanvasEvent(currentRoomId, userCtx.user_id, 'cursor_moved', {
-              x: Math.round(msg.x ?? 0),
-              y: Math.round(msg.y ?? 0),
-            });
-            broadcastToRoom(currentRoomId, {
-              type: 'event_log_entry',
-              event: {
-                id: inserted.id,
-                event_type: 'cursor_moved',
-                payload: { x: Math.round(msg.x ?? 0), y: Math.round(msg.y ?? 0) },
-                created_at: inserted.created_at,
-                user_id: userCtx.user_id,
-                username: userCtx.username,
-              }
-            });
-          }
           return;
         }
 

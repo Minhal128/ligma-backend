@@ -40,6 +40,12 @@ export async function getYDoc(roomId) {
       // but in the backend, 'origin' should be the userId.
       if (!origin || origin === 'local-sync' || origin === 'remote') return;
 
+      // CRITICAL: Extract changes synchronously before any await
+      const changes = [];
+      event.changes.keys.forEach((change, id) => {
+        changes.push({ id, change, record: yMap.get(id) });
+      });
+
       let username = null;
       try {
         const u = await pool.query('SELECT username FROM users WHERE id=$1', [origin]);
@@ -69,9 +75,8 @@ export async function getYDoc(roomId) {
       };
 
       const jobs = [];
-      event.changes.keys.forEach((change, id) => {
+      changes.forEach(({ id, change, record }) => {
         if (change.action === 'add' || change.action === 'update') {
-          const record = yMap.get(id);
           const previous = change.oldValue;
           
           // Tldraw records have typeName, and shapes have type
