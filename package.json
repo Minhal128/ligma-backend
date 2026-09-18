@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node scripts/init-db.js && node index.js",
-    "dev": "node --watch index.js",
+    "start": "node init && node scripts/init-db.js && node index.js",
+    "dev": "node init && node --watch index.js",
     "db:init": "node scripts/init-db.js"
   },
   "dependencies": {
